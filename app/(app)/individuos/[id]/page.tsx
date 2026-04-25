@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { updateIndividuoStatus, moveIndividuo } from '@/lib/actions/individuos';
+import IndividuoActionsClient from '@/components/individuos/IndividuoActionsClient';
 
 export default async function IndividuoPerfilPage({ params }: { params: { id: string } }) {
   const { id } = await params;
@@ -33,6 +34,13 @@ export default async function IndividuoPerfilPage({ params }: { params: { id: st
     .single();
 
   if (!individuo) notFound();
+
+  // Buscar estruturas ativas para o modal de mover
+  const { data: estruturas } = await supabase
+    .from('estruturas')
+    .select('*')
+    .eq('ativa', true)
+    .order('nome');
 
   // Buscar ninhadas onde é pai ou mãe
   const { data: ninhadas } = await supabase
@@ -70,15 +78,12 @@ export default async function IndividuoPerfilPage({ params }: { params: { id: st
           </div>
         </div>
 
-        <div className="flex gap-2">
-          {/* Ações Rápidas (Simuladas) */}
-          <button className="btn btn-outline">
-            <ArrowRightLeft size={18} /> Mover
-          </button>
-          <button className="btn btn-primary">
-            <Activity size={18} /> Alterar Status
-          </button>
-        </div>
+        <IndividuoActionsClient 
+          individuoId={individuo.id}
+          currentStatus={individuo.status}
+          currentEstruturaId={individuo.estrutura_id}
+          estruturas={estruturas || []}
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -122,28 +127,36 @@ export default async function IndividuoPerfilPage({ params }: { params: { id: st
               <div className="flex gap-12 w-full justify-center">
                 <div className="flex flex-col items-center gap-2">
                   <p className="text-[10px] uppercase font-bold text-blue-500 tracking-widest">Pai</p>
-                  {individuo.pai ? (
+                  {!individuo.pai_id ? (
+                    <div className="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-400 text-xs italic">
+                      Fundador (sem registro)
+                    </div>
+                  ) : individuo.pai ? (
                     <Link href={`/individuos/${individuo.pai.id}`} className="p-4 bg-blue-50 border border-blue-100 rounded-xl text-center hover:bg-blue-100 transition-colors">
                       <p className="font-bold text-blue-700">{individuo.pai.codigo}</p>
                       <p className="text-[10px] text-blue-600">{individuo.pai.nome_popular || '—'}</p>
                     </Link>
                   ) : (
-                    <div className="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-400 text-xs italic">
-                      Externo / Desconhecido
+                    <div className="p-4 bg-red-50 border border-red-100 rounded-xl text-red-500 text-xs italic">
+                      Registro não encontrado
                     </div>
                   )}
                 </div>
 
                 <div className="flex flex-col items-center gap-2">
                   <p className="text-[10px] uppercase font-bold text-pink-500 tracking-widest">Mãe</p>
-                  {individuo.mae ? (
+                  {!individuo.mae_id ? (
+                    <div className="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-400 text-xs italic">
+                      Fundadora (sem registro)
+                    </div>
+                  ) : individuo.mae ? (
                     <Link href={`/individuos/${individuo.mae.id}`} className="p-4 bg-pink-50 border border-pink-100 rounded-xl text-center hover:bg-pink-100 transition-colors">
                       <p className="font-bold text-pink-700">{individuo.mae.codigo}</p>
                       <p className="text-[10px] text-pink-600">{individuo.mae.nome_popular || '—'}</p>
                     </Link>
                   ) : (
-                    <div className="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-400 text-xs italic">
-                      Externo / Desconhecida
+                    <div className="p-4 bg-red-50 border border-red-100 rounded-xl text-red-500 text-xs italic">
+                      Registro não encontrado
                     </div>
                   )}
                 </div>

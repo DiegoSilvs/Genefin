@@ -15,7 +15,7 @@ import {
   X,
   Save
 } from 'lucide-react';
-import { createLoteAlimento, updateEstoqueInsumo, updateLoteStatus } from '@/lib/actions/alimentos';
+import { createLoteAlimento, updateEstoqueInsumo, updateLoteStatus, createEstoqueInsumo } from '@/lib/actions/alimentos';
 import { LoteAlimento, EstoqueInsumo, Estrutura } from '@/lib/types';
 
 interface AlimentosClientProps {
@@ -27,6 +27,7 @@ interface AlimentosClientProps {
 export default function AlimentosClient({ lotes, estoque, estruturas }: AlimentosClientProps) {
   const [activeTab, setActiveTab] = useState<'lotes' | 'estoque'>('lotes');
   const [isLoteModalOpen, setIsLoteModalOpen] = useState(false);
+  const [isNewInsumoModalOpen, setIsNewInsumoModalOpen] = useState(false);
   const [isStockModalOpen, setIsStockModalOpen] = useState<{ id: string, type: 'entrada' | 'saida' } | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -60,7 +61,7 @@ export default function AlimentosClient({ lotes, estoque, estruturas }: Alimento
             <Plus size={20} /> Novo Lote
           </button>
         ) : (
-          <button className="btn btn-outline font-bold">
+          <button onClick={() => setIsNewInsumoModalOpen(true)} className="btn btn-primary bg-indigo-600 hover:bg-indigo-700 font-bold">
             <Plus size={20} /> Novo Insumo
           </button>
         )}
@@ -69,8 +70,8 @@ export default function AlimentosClient({ lotes, estoque, estruturas }: Alimento
       {activeTab === 'lotes' ? (
         /* ABA 1: LOTES ATIVOS */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {lotes.length > 0 ? (
-            lotes.map((lote) => {
+          {lotes.filter(l => l.status !== 'descartado').length > 0 ? (
+            lotes.filter(l => l.status !== 'descartado').map((lote) => {
               const fimUso = new Date(lote.janela_uso_fim || '');
               const inicioUso = new Date(lote.janela_uso_inicio || '');
               const isUrgent = lote.status === 'preparando' && 
@@ -124,25 +125,35 @@ export default function AlimentosClient({ lotes, estoque, estruturas }: Alimento
 
                   <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                      {lote.status}
+                      {lote.status.replace('_', ' ')}
                     </span>
-                    <div className="flex gap-2">
+                    <div className="flex gap-3">
                       {lote.status === 'preparando' && (
                         <button 
                           onClick={() => updateLoteStatus(lote.id, 'pronto')}
-                          className="text-[10px] font-black text-green-600 hover:underline"
+                          className="text-[10px] font-black text-green-600 hover:underline uppercase"
                         >
-                          MARCAR PRONTO
+                          Pronto
                         </button>
                       )}
                       {lote.status === 'pronto' && (
                         <button 
                           onClick={() => updateLoteStatus(lote.id, 'em_uso')}
-                          className="text-[10px] font-black text-blue-600 hover:underline"
+                          className="text-[10px] font-black text-blue-600 hover:underline uppercase"
                         >
-                          INICIAR USO
+                          Usar
                         </button>
                       )}
+                      <button 
+                        onClick={() => {
+                          if (window.confirm('Deseja realmente descartar este lote?')) {
+                            updateLoteStatus(lote.id, 'descartado');
+                          }
+                        }}
+                        className="text-[10px] font-black text-red-400 hover:text-red-600 uppercase"
+                      >
+                        Descartar
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -269,6 +280,71 @@ export default function AlimentosClient({ lotes, estoque, estruturas }: Alimento
               <div className="flex gap-4 pt-4">
                 <button type="button" onClick={() => setIsLoteModalOpen(false)} className="btn btn-outline flex-1">Cancelar</button>
                 <button type="submit" className="btn btn-primary flex-1">Iniciar Lote</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Novo Insumo */}
+      {isNewInsumoModalOpen && (
+        <div className="modal-backdrop">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-indigo-50">
+              <h3 className="font-bold text-indigo-800 flex items-center gap-2">
+                <Package size={20} /> Cadastrar Novo Insumo
+              </h3>
+              <button onClick={() => setIsNewInsumoModalOpen(false)}><X size={20} /></button>
+            </div>
+            <form action={createEstoqueInsumo} onSubmit={() => {setLoading(true); setIsNewInsumoModalOpen(false);}} className="p-8 space-y-6">
+              <div className="form-group">
+                <label>Nome do Insumo</label>
+                <input name="nome" type="text" placeholder="ex: Cistos de Artêmia Premium" required />
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div className="form-group">
+                  <label>Tipo</label>
+                  <select name="tipo" required>
+                    <option value="cistos_artemia">Cistos de Artêmia</option>
+                    <option value="racao">Ração</option>
+                    <option value="sal">Sal</option>
+                    <option value="medicamento">Medicamento</option>
+                    <option value="condicionador">Condicionador</option>
+                    <option value="outro">Outro</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Unidade</label>
+                  <select name="unidade" required>
+                    <option value="g">Gramas (g)</option>
+                    <option value="kg">Quilos (kg)</option>
+                    <option value="ml">Mililitros (ml)</option>
+                    <option value="L">Litros (L)</option>
+                    <option value="unidade">Unidade</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div className="form-group">
+                  <label>Quantidade Atual</label>
+                  <input name="quantidade_atual" type="number" step="0.01" required />
+                </div>
+                <div className="form-group">
+                  <label>Qtd. Mínima (Alerta)</label>
+                  <input name="quantidade_minima" type="number" step="0.01" required />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Data de Validade (Opcional)</label>
+                <input name="data_validade" type="date" />
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                <button type="button" onClick={() => setIsNewInsumoModalOpen(false)} className="btn btn-outline flex-1">Cancelar</button>
+                <button type="submit" className="btn btn-primary bg-indigo-600 hover:bg-indigo-700 flex-1">Cadastrar</button>
               </div>
             </form>
           </div>

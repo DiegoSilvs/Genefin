@@ -1,7 +1,4 @@
-import React from 'react';
-import Link from 'next/link';
-import { Plus, Dna } from 'lucide-react';
-import { createClient } from '@/lib/supabase/server';
+import LinhagensClient from '@/components/linhagens/LinhagensClient';
 
 export default async function LinhagensPage() {
   const supabase = await createClient();
@@ -27,37 +24,7 @@ export default async function LinhagensPage() {
       </div>
 
       {linhagens && linhagens.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {linhagens.map((l: any) => (
-            <div 
-              key={l.id} 
-              className="bg-white p-6 rounded-3xl border-2 border-slate-100 shadow-sm hover:shadow-md transition-all"
-            >
-              <div className="flex justify-between items-start mb-4">
-                <div className="p-4 bg-indigo-50 rounded-2xl text-indigo-600">
-                  <Dna size={28} />
-                </div>
-                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                  l.ativa ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
-                }`}>
-                  {l.ativa ? 'Ativa' : 'Inativa'}
-                </span>
-              </div>
-              
-              <div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                  Código: {l.especie?.sigla}·{l.numero?.toString().padStart(3, '0')}
-                </p>
-                <h3 className="font-black text-slate-900 text-xl tracking-tight">{l.nome}</h3>
-                <p className="text-sm font-bold text-indigo-600">{l.especie?.nome}</p>
-              </div>
-
-              <p className="text-sm text-slate-500 mt-4 line-clamp-2 italic">
-                {l.descricao || 'Sem descrição detalhada.'}
-              </p>
-            </div>
-          ))}
-        </div>
+        <LinhagensClient linhagens={linhagens as any} />
       ) : (
         <div className="bg-white p-20 rounded-3xl border-2 border-dashed border-slate-200 text-center max-w-4xl mx-auto">
           <div className="inline-flex p-6 bg-slate-50 rounded-full text-slate-300 mb-6">

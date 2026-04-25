@@ -32,3 +32,38 @@ export async function createLinhagem(formData: FormData) {
   revalidatePath('/linhagens');
   redirect('/linhagens');
 }
+
+export async function deleteLinhagem(id: string) {
+  const supabase = await createClient();
+  
+  // 1. Verificar se existem indivíduos
+  const { count: countIndividuos } = await supabase
+    .from('individuos')
+    .select('*', { count: 'exact', head: true })
+    .eq('linhagem_id', id);
+
+  // 2. Verificar se existem ninhadas
+  const { count: countNinhadas } = await supabase
+    .from('ninhadas')
+    .select('*', { count: 'exact', head: true })
+    .eq('linhagem_id', id);
+
+  if ((countIndividuos || 0) > 0 || (countNinhadas || 0) > 0) {
+    return { error: 'Não é possível excluir: existem indivíduos ou ninhadas vinculados a esta linhagem. Sugestão: Arquivar.' };
+  }
+
+  const { error } = await supabase.from('linhagens').delete().eq('id', id);
+  if (error) throw error;
+
+  revalidatePath('/linhagens');
+  return { success: true };
+}
+
+export async function archiveLinhagem(id: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from('linhagens').update({ ativa: false }).eq('id', id);
+  if (error) throw error;
+
+  revalidatePath('/linhagens');
+  return { success: true };
+}

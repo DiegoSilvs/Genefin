@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   Fish,
@@ -14,7 +14,7 @@ import {
   Heart,
   Droplets,
 } from 'lucide-react';
-import { logout } from '@/lib/auth';
+import { createClient } from '@/lib/supabase/client';
 import styles from './Sidebar.module.css';
 
 const menuItems = [
@@ -28,10 +28,13 @@ const menuItems = [
 
 export const Sidebar = () => {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = React.useState(false);
+  const supabase = createClient();
 
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push('/login');
   }
 
   return (

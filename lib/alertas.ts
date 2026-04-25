@@ -18,7 +18,7 @@ export async function getAlertasDashboard(): Promise<AlertaDashboard[]> {
     { data: estoqueInsumos }
   ] = await Promise.all([
     supabase.from('ninhadas').select('*, especie:especies(*)').eq('status', 'ativa'),
-    supabase.from('estruturas').select('*, linhagem:linhagens(*)').eq('ativa', true),
+    supabase.from('estruturas').select('*, linhagem:linhagens(*, especie:especies(*))').eq('ativa', true),
     supabase.from('lotes_alimento').select('*').in('status', ['preparando', 'pronto']),
     supabase.from('estoque_insumos').select('*')
   ]);
@@ -83,6 +83,9 @@ export async function getAlertasDashboard(): Promise<AlertaDashboard[]> {
   // Medição de água fora da faixa ideal (ALTA) e Estruturas sem medição (MÉDIA)
   if (estruturas) {
     for (const estrutura of estruturas) {
+      const especie = (estrutura as any).linhagem?.especie as Especie;
+      if (!especie) continue; // Só gera alerta de água para estruturas com espécie definida
+
       const { data: medicoes } = await supabase
         .from('medicoes_agua')
         .select('*')
@@ -95,47 +98,53 @@ export async function getAlertasDashboard(): Promise<AlertaDashboard[]> {
         const dataMedicao = new Date(ultimaMedicao.data_medicao);
         const diasSemMedicao = Math.floor((agora.getTime() - dataMedicao.getTime()) / (1000 * 60 * 60 * 24));
 
-        // Regra PRIORIDADE MÉDIA: Estrutura de reprodução sem medição há mais de 3 dias
-        if (estrutura.tipo === 'reproducao' && diasSemMedicao > 3) {
+        // Bug 2 corrigido: Se medição com mais de 3 dias, alerta MÉDIA
+        if (diasSemMedicao > 3) {
           alertas.push({
             tipo: 'agua_vencida',
             prioridade: 'media',
-            titulo: `Água Vencida: ${estrutura.nome}`,
-            descricao: `Última medição realizada há ${diasSemMedicao} dias nesta estrutura de reprodução.`,
+            titulo: `Medição Atrasada: ${estrutura.nome}`,
+            descricao: `Última medição realizada há ${diasSemMedicao} dias. Recomenda-se nova análise.`,
             link: `/agua`,
             entidade_id: estrutura.id
           });
         }
 
-        // Regra PRIORIDADE ALTA: Parâmetros fora da faixa (se houver linhagem e espécie associada)
-        const especie = (estrutura as any).linhagem?.especie as Especie;
-        if (especie) {
-          let foraDaFaixa = false;
-          let detalhe = '';
+        // Bug 1 corrigido: pH fora da faixa em mais de 10%, alerta ALTA
+        let critico = false;
+        let detalhe = '';
 
-          if (especie.ph_min && ultimaMedicao.ph && ultimaMedicao.ph < especie.ph_min) { foraDaFaixa = true; detalhe += `pH baixo (${ultimaMedicao.ph}). `; }
-          if (especie.ph_max && ultimaMedicao.ph && ultimaMedicao.ph > especie.ph_max) { foraDaFaixa = true; detalhe += `pH alto (${ultimaMedicao.ph}). `; }
-          if (especie.temp_min && ultimaMedicao.temperatura && ultimaMedicao.temperatura < especie.temp_min) { foraDaFaixa = true; detalhe += `Temp baixa (${ultimaMedicao.temperatura}°C). `; }
-          if (especie.temp_max && ultimaMedicao.temperatura && ultimaMedicao.temperatura > especie.temp_max) { foraDaFaixa = true; detalhe += `Temp alta (${ultimaMedicao.temperatura}°C). `; }
+        if (ultimaMedicao.ph && (especie.ph_min || especie.ph_max)) {
+          const mn = especie.ph_min ? Number(especie.ph_min) : null;
+          const mx = especie.ph_max ? Number(especie.ph_max) : null;
+          const val = Number(ultimaMedicao.ph);
 
-          if (foraDaFaixa) {
-            alertas.push({
-              tipo: 'agua_fora_faixa',
-              prioridade: 'alta',
-              titulo: `Parâmetro Crítico: ${estrutura.nome}`,
-              descricao: `Atenção: ${detalhe}`,
-              link: `/agua`,
-              entidade_id: estrutura.id
-            });
+          const thresholdMin = mn ? mn * 0.1 : 0;
+          const thresholdMax = mx ? mx * 0.1 : 0;
+
+          if ((mn && val < mn - thresholdMin) || (mx && val > mx + thresholdMax)) {
+            critico = true;
+            detalhe += `pH Crítico (${val}). `;
           }
         }
-      } else if (estrutura.tipo === 'reproducao') {
+
+        if (critico) {
+          alertas.push({
+            tipo: 'agua_fora_faixa',
+            prioridade: 'alta',
+            titulo: `Parâmetro Crítico: ${estrutura.nome}`,
+            descricao: `Atenção: ${detalhe} Verifique o aquário imediatamente.`,
+            link: `/agua`,
+            entidade_id: estrutura.id
+          });
+        }
+      } else {
         // Nunca medido
         alertas.push({
           tipo: 'agua_vencida',
           prioridade: 'media',
           titulo: `Sem Medição: ${estrutura.nome}`,
-          descricao: `Nenhuma medição de água registrada para esta estrutura de reprodução.`,
+          descricao: `Nenhuma medição de água registrada para este aquário com ${especie.nome}.`,
           link: `/agua`,
           entidade_id: estrutura.id
         });

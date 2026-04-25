@@ -85,3 +85,30 @@ export async function updateLoteStatus(id: string, status: StatusAlimento) {
   if (error) throw error;
   revalidatePath('/alimentos');
 }
+
+export async function createEstoqueInsumo(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Não autenticado');
+
+  const nome = formData.get('nome') as string;
+  const tipo = formData.get('tipo') as string;
+  const quantidade_atual = parseFloat(formData.get('quantidade_atual') as string);
+  const unidade = formData.get('unidade') as string;
+  const quantidade_minima = parseFloat(formData.get('quantidade_minima') as string);
+  const data_validade = formData.get('data_validade') as string || null;
+
+  const { error } = await supabase.from('estoque_insumos').insert({
+    usuario_id: user.id,
+    nome,
+    tipo,
+    quantidade_atual,
+    unidade,
+    quantidade_minima,
+    data_validade: data_validade || null
+  });
+
+  if (error) throw error;
+
+  revalidatePath('/alimentos');
+}

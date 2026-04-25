@@ -16,7 +16,10 @@ export default async function AppLayout({
   }
 
   return (
-    <AppLayoutClient userEmail={user.email}>
+    <AppLayoutClient 
+      userEmail={user.email} 
+      userName={user.user_metadata?.full_name}
+    >
       {children}
     </AppLayoutClient>
   );

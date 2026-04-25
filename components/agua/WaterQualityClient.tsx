@@ -34,19 +34,32 @@ export default function WaterQualityClient({ estruturas, medicoesIniciais }: Wat
 
   const especie = selectedEstrutura?.linhagem?.especie;
 
-  const checkStatus = (val: number | null, min: number | null, max: number | null) => {
-    if (val === null) return 'bg-slate-300';
-    if (min === null && max === null) return 'bg-green-500';
+  const checkStatus = (val: any, min: any, max: any) => {
+    if (val === null || val === undefined) return 'bg-slate-300';
     
-    const isWithin = (min === null || val >= min) && (max === null || val <= max);
+    const v = Number(val);
+    const mn = min !== null && min !== undefined ? Number(min) : null;
+    const mx = max !== null && max !== undefined ? Number(max) : null;
+
+    if (mn === null && mx === null) return 'bg-slate-200';
+    
+    const isWithin = (mn === null || v >= mn) && (mx === null || v <= mx);
     if (isWithin) return 'bg-green-500';
 
-    // Cálculo de 10% fora da faixa
-    const range = (max || 0) - (min || 0);
-    const threshold = range > 0 ? range * 0.1 : (min || max || 0) * 0.1;
+    // Amarelo se até 10% fora da faixa (baseado nos limites)
+    const thresholdMin = mn !== null ? mn * 0.1 : 0;
+    const thresholdMax = mx !== null ? mx * 0.1 : 0;
 
-    const isClose = (min !== null && val >= min - threshold) && (max !== null && val <= max + threshold);
+    const isClose = (mn === null || v >= mn - thresholdMin) && (mx === null || v <= mx + thresholdMax);
     return isClose ? 'bg-amber-500' : 'bg-red-500';
+  };
+
+  const getAmoniaStatus = (val: any) => {
+    if (val === null || val === undefined) return 'bg-slate-300';
+    const v = Number(val);
+    if (v <= 0.02) return 'bg-green-500';
+    if (v <= 0.05) return 'bg-amber-500';
+    return 'bg-red-500';
   };
 
   return (
@@ -202,7 +215,7 @@ export default function WaterQualityClient({ estruturas, medicoesIniciais }: Wat
                         </td>
                         <td className="p-6">
                           <div className="flex items-center gap-3">
-                            <div className={`w-4 h-4 rounded-full shadow-inner ${checkStatus(m.amonia, 0, 0.05)}`}></div>
+                            <div className={`w-4 h-4 rounded-full shadow-inner ${getAmoniaStatus(m.amonia)}`}></div>
                             <span className="text-lg">{m.amonia?.toFixed(2) ?? '—'}</span>
                           </div>
                         </td>
