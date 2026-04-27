@@ -69,7 +69,7 @@ export async function getAlertasDashboard(): Promise<AlertaDashboard[]> {
       const diasDeVida = Math.floor((agora.getTime() - new Date(ninhada.created_at).getTime()) / (1000 * 60 * 60 * 24));
       if (diasDeVida < 3) {
         alertas.push({
-          tipo: 'selecao_pendente', // Usando tipo aproximado
+          tipo: 'ninhada_nova',
           prioridade: 'baixa',
           titulo: `Acompanhamento: ${ninhada.codigo}`,
           descricao: `Ninhada recém-criada. Verifique o nado livre e início da alimentação.`,
@@ -110,10 +110,7 @@ export async function getAlertasDashboard(): Promise<AlertaDashboard[]> {
           });
         }
 
-        // Bug 1 corrigido: pH fora da faixa em mais de 10%, alerta ALTA
-        let critico = false;
-        let detalhe = '';
-
+        // pH fora da faixa em mais de 10%, alerta ALTA
         if (ultimaMedicao.ph && (especie.ph_min || especie.ph_max)) {
           const mn = especie.ph_min ? Number(especie.ph_min) : null;
           const mx = especie.ph_max ? Number(especie.ph_max) : null;
@@ -123,20 +120,59 @@ export async function getAlertasDashboard(): Promise<AlertaDashboard[]> {
           const thresholdMax = mx ? mx * 0.1 : 0;
 
           if ((mn && val < mn - thresholdMin) || (mx && val > mx + thresholdMax)) {
-            critico = true;
-            detalhe += `pH Crítico (${val}). `;
+            alertas.push({
+              tipo: 'agua_fora_faixa',
+              prioridade: 'alta',
+              titulo: `pH Crítico: ${estrutura.nome}`,
+              descricao: `pH crítico (${val}). Verifique o aquário imediatamente.`,
+              link: `/agua`,
+              entidade_id: estrutura.id
+            });
           }
         }
 
-        if (critico) {
-          alertas.push({
-            tipo: 'agua_fora_faixa',
-            prioridade: 'alta',
-            titulo: `Parâmetro Crítico: ${estrutura.nome}`,
-            descricao: `Atenção: ${detalhe} Verifique o aquário imediatamente.`,
-            link: `/agua`,
-            entidade_id: estrutura.id
-          });
+        // PROBLEMA 1: Temperatura ignorada no alerta de água
+        if (ultimaMedicao.temperatura && (especie.temp_min || especie.temp_max)) {
+          const mn = especie.temp_min ? Number(especie.temp_min) : null;
+          const mx = especie.temp_max ? Number(especie.temp_max) : null;
+          const val = Number(ultimaMedicao.temperatura);
+          const tMin = mn ? mn * 0.1 : 0;
+          const tMax = mx ? mx * 0.1 : 0;
+
+          if ((mn && val < mn - tMin) || (mx && val > mx + tMax)) {
+            alertas.push({
+              tipo: 'agua_fora_faixa',
+              prioridade: 'alta',
+              titulo: `Temperatura Crítica: ${estrutura.nome}`,
+              descricao: `Temperatura crítica (${val}°C). Faixa ideal: ${mn}–${mx}°C.`,
+              link: `/agua`,
+              entidade_id: estrutura.id
+            });
+          }
+        }
+
+        // PROBLEMA 3: Amônia não está sendo validada
+        if (ultimaMedicao.amonia !== null && ultimaMedicao.amonia !== undefined) {
+          const amonia = Number(ultimaMedicao.amonia);
+          if (amonia > 0.05) {
+            alertas.push({
+              tipo: 'agua_fora_faixa',
+              prioridade: 'alta',
+              titulo: `Amônia Crítica: ${estrutura.nome}`,
+              descricao: `Amônia em ${amonia} ppm — nível perigoso. Fazer troca parcial imediatamente.`,
+              link: `/agua`,
+              entidade_id: estrutura.id
+            });
+          } else if (amonia > 0.02) {
+            alertas.push({
+              tipo: 'agua_fora_faixa',
+              prioridade: 'media',
+              titulo: `Amônia Elevada: ${estrutura.nome}`,
+              descricao: `Amônia em ${amonia} ppm — atenção. Faixa segura: abaixo de 0.02 ppm.`,
+              link: `/agua`,
+              entidade_id: estrutura.id
+            });
+          }
         }
       } else {
         // Nunca medido

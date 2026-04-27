@@ -4,7 +4,7 @@ export type Especie = {
   id: string
   nome: string
   nome_cientifico: string | null
-  sigla: string
+  codigo: string
   ph_min: number | null
   ph_max: number | null
   temp_min: number | null
@@ -147,7 +147,7 @@ export type LoteAlimento = {
 }
 
 // Tipo para os alertas do dashboard
-export type TipoAlerta = 'selecao_pendente' | 'agua_vencida' | 'agua_fora_faixa' | 'alimento_pronto' | 'alimento_vencendo' | 'estoque_baixo'
+export type TipoAlerta = 'selecao_pendente' | 'agua_vencida' | 'agua_fora_faixa' | 'alimento_pronto' | 'alimento_vencendo' | 'estoque_baixo' | 'ninhada_nova'
 
 export type AlertaDashboard = {
   tipo: TipoAlerta

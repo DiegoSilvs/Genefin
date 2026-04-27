@@ -1,4 +1,4 @@
-import { createClient } from './supabase/server';
+import { createClient } from '@/lib/supabase/server';
 
 /**
  * Chama a função RPC gerar_codigo_individuo no Supabase.

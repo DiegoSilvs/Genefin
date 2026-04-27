@@ -59,7 +59,7 @@ export default function EstruturaForm({ linhagens }: EstruturaFormProps) {
           >
             <option value="">Nenhuma / Mista</option>
             {linhagens.map((l) => (
-              <option key={l.id} value={l.id}>{l.nome} ({l.sigla})</option>
+              <option key={l.id} value={l.id}>{l.nome} ({l.numero.toString().padStart(3, '0')})</option>
             ))}
           </select>
           {tipo === 'quarentena' && (

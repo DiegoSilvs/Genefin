@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { createLinhagem } from '@/lib/actions/linhagens';
 import { Especie } from '@/lib/types';
-import { Save, X } from 'lucide-react';
+import { Save, X, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 
 interface LinhagemFormProps {
@@ -11,10 +12,41 @@ interface LinhagemFormProps {
 }
 
 export default function LinhagemForm({ especies }: LinhagemFormProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    try {
+      const formData = new FormData(e.currentTarget);
+      const result = await createLinhagem(formData);
+
+      if (result?.success) {
+        router.push('/linhagens');
+        router.refresh();
+      } else if (result?.error) {
+        setError(result.error);
+        setLoading(false);
+      }
+    } catch (err) {
+      setError('Ocorreu um erro inesperado.');
+      setLoading(false);
+    }
+  };
 
   return (
-    <form action={createLinhagem} onSubmit={() => setLoading(true)} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {error && (
+        <div className="p-4 bg-red-50 border-2 border-red-100 rounded-2xl flex items-center gap-3 text-red-700 animate-in fade-in slide-in-from-top-2">
+          <AlertCircle size={20} />
+          <p className="font-bold text-sm uppercase tracking-tight">{error}</p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="form-group">
           <label htmlFor="especie_id">Espécie</label>
@@ -50,7 +82,7 @@ export default function LinhagemForm({ especies }: LinhagemFormProps) {
 
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
         <p className="text-xs text-slate-500 flex items-center gap-2 italic">
-          💡 O código da linhagem será gerado automaticamente (ex: 001, 002) conforme a ordem de cadastro para esta espécie.
+          💡 O número da linhagem será gerado automaticamente (ex: 001, 002) conforme a ordem de cadastro para esta espécie.
         </p>
       </div>
 

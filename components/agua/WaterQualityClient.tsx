@@ -12,8 +12,11 @@ import {
   AlertCircle,
   Activity,
   CheckCircle2,
-  Search
+  Search,
+  Pencil,
+  X
 } from 'lucide-react';
+import { updateMedicaoAgua } from '@/lib/actions/agua';
 
 interface WaterQualityClientProps {
   estruturas: (Estrutura & { linhagem: { especie: Especie } | null })[];
@@ -23,6 +26,9 @@ interface WaterQualityClientProps {
 export default function WaterQualityClient({ estruturas, medicoesIniciais }: WaterQualityClientProps) {
   const [selectedId, setSelectedId] = useState(estruturas[0]?.id || '');
   const [loading, setLoading] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [editingMedicao, setEditingMedicao] = useState<MedicaoAgua | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
 
   const selectedEstrutura = useMemo(() => 
     estruturas.find(e => e.id === selectedId), 
@@ -34,13 +40,28 @@ export default function WaterQualityClient({ estruturas, medicoesIniciais }: Wat
 
   const especie = selectedEstrutura?.linhagem?.especie;
 
-  const checkStatus = (val: any, min: any, max: any) => {
-    if (val === null || val === undefined) return 'bg-slate-300';
+  const checkStatus = (val: any, min: any, max: any, type?: 'ph' | 'temp') => {
+    // Regra Crítica: converter para número antes de comparar
+    const v = val !== null && val !== undefined && val !== '' ? parseFloat(val) : null;
     
-    const v = Number(val);
-    const mn = min !== null && min !== undefined ? Number(min) : null;
-    const mx = max !== null && max !== undefined ? Number(max) : null;
+    // Neutro/cinza: APENAS quando o valor for null ou undefined (ou vazio)
+    if (v === null || isNaN(v)) return 'bg-slate-300';
+    
+    let mn = min !== null && min !== undefined && min !== '' ? parseFloat(min) : null;
+    let mx = max !== null && max !== undefined && max !== '' ? parseFloat(max) : null;
 
+    // BUG 1: Se a espécie não estiver disponível, usar faixas padrão
+    if (mn === null && mx === null) {
+      if (type === 'ph') {
+        mn = 6.0;
+        mx = 8.0;
+      } else if (type === 'temp') {
+        mn = 20.0;
+        mx = 30.0;
+      }
+    }
+
+    // Se ainda não houver limites (para outros parâmetros), mantemos cinza claro
     if (mn === null && mx === null) return 'bg-slate-200';
     
     const isWithin = (mn === null || v >= mn) && (mx === null || v <= mx);
@@ -55,12 +76,17 @@ export default function WaterQualityClient({ estruturas, medicoesIniciais }: Wat
   };
 
   const getAmoniaStatus = (val: any) => {
-    if (val === null || val === undefined) return 'bg-slate-300';
-    const v = Number(val);
+    // Regra Crítica: converter para número antes de comparar
+    const v = val !== null && val !== undefined && val !== '' ? parseFloat(val) : null;
+
+    // Neutro/cinza: APENAS quando o valor for null ou undefined (ou vazio)
+    if (v === null || isNaN(v)) return 'bg-slate-300';
+
     if (v <= 0.02) return 'bg-green-500';
     if (v <= 0.05) return 'bg-amber-500';
     return 'bg-red-500';
   };
+
 
   return (
     <div className="space-y-6">
@@ -124,9 +150,34 @@ export default function WaterQualityClient({ estruturas, medicoesIniciais }: Wat
               <Activity size={20} className="text-slate-400" />
               <h2 className="font-black text-slate-800 text-sm uppercase tracking-widest">Nova Medição</h2>
             </div>
-            <form action={saveMedicaoAgua} onSubmit={() => setLoading(true)} className="p-8 space-y-6">
+            <form 
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                const formData = new FormData(e.currentTarget);
+                try {
+                  const res = await saveMedicaoAgua(formData);
+                  if (res.success) {
+                    (e.target as HTMLFormElement).reset();
+                    setShowSuccess(true);
+                    setTimeout(() => setShowSuccess(false), 3000);
+                  }
+                } catch (error) {
+                  console.error('Erro ao salvar:', error);
+                } finally {
+                  setLoading(false);
+                }
+              }} 
+              className="p-8 space-y-6"
+            >
               <input type="hidden" name="estrutura_id" value={selectedId} />
               
+              {showSuccess && (
+                <div className="p-3 bg-green-50 border border-green-200 text-green-700 text-sm font-bold rounded-xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                  <CheckCircle2 size={16} /> Medição salva!
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-6">
                 <div className="form-group">
                   <label className="text-xs font-black text-blue-600 flex items-center gap-1 uppercase tracking-widest mb-2">
@@ -191,6 +242,7 @@ export default function WaterQualityClient({ estruturas, medicoesIniciais }: Wat
                     <th className="p-6">Temperatura</th>
                     <th className="p-6">Amônia</th>
                     <th className="p-6">Nitrito</th>
+                    <th className="p-6 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -203,13 +255,13 @@ export default function WaterQualityClient({ estruturas, medicoesIniciais }: Wat
                         </td>
                         <td className="p-6">
                           <div className="flex items-center gap-3">
-                            <div className={`w-4 h-4 rounded-full shadow-inner ${checkStatus(m.ph, especie?.ph_min || null, especie?.ph_max || null)}`}></div>
+                            <div className={`w-4 h-4 rounded-full shadow-inner ${checkStatus(m.ph, especie?.ph_min || null, especie?.ph_max || null, 'ph')}`}></div>
                             <span className="text-lg">{m.ph?.toFixed(1) || '—'}</span>
                           </div>
                         </td>
                         <td className="p-6">
                           <div className="flex items-center gap-3">
-                            <div className={`w-4 h-4 rounded-full shadow-inner ${checkStatus(m.temperatura, especie?.temp_min || null, especie?.temp_max || null)}`}></div>
+                            <div className={`w-4 h-4 rounded-full shadow-inner ${checkStatus(m.temperatura, especie?.temp_min || null, especie?.temp_max || null, 'temp')}`}></div>
                             <span className="text-lg">{m.temperatura ? `${m.temperatura.toFixed(1)}°C` : '—'}</span>
                           </div>
                         </td>
@@ -220,6 +272,15 @@ export default function WaterQualityClient({ estruturas, medicoesIniciais }: Wat
                           </div>
                         </td>
                         <td className="p-6 text-slate-400 font-medium">{m.nitrito?.toFixed(2) ?? '—'}</td>
+                        <td className="p-6 text-right">
+                          <button 
+                            onClick={() => setEditingMedicao(m)}
+                            className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all"
+                            title="Editar medição"
+                          >
+                            <Pencil size={18} />
+                          </button>
+                        </td>
                       </tr>
                     ))
                   ) : (
@@ -236,6 +297,92 @@ export default function WaterQualityClient({ estruturas, medicoesIniciais }: Wat
           </div>
         </div>
       </div>
+
+      {/* Modal de Edição */}
+      {editingMedicao && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2">
+                <Pencil size={20} className="text-blue-500" />
+                <h3 className="font-black text-slate-800 uppercase tracking-widest text-sm">Editar Medição</h3>
+              </div>
+              <button onClick={() => setEditingMedicao(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                <X size={20} className="text-slate-400" />
+              </button>
+            </div>
+            
+            <form 
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setEditLoading(true);
+                const formData = new FormData(e.currentTarget);
+                try {
+                  const res = await updateMedicaoAgua(editingMedicao.id, formData);
+                  if (res.success) {
+                    setEditingMedicao(null);
+                  }
+                } finally {
+                  setEditLoading(false);
+                }
+              }}
+              className="p-8 space-y-6"
+            >
+              <div className="grid grid-cols-2 gap-6">
+                <div className="form-group">
+                  <label className="text-xs font-black text-blue-600 uppercase tracking-widest mb-2">pH</label>
+                  <input name="ph" type="number" step="0.1" defaultValue={editingMedicao.ph || ''} required />
+                </div>
+                <div className="form-group">
+                  <label className="text-xs font-black text-orange-600 uppercase tracking-widest mb-2">Temp. (°C)</label>
+                  <input name="temperatura" type="number" step="0.1" defaultValue={editingMedicao.temperatura || ''} required />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="form-group">
+                  <label className="text-[10px] font-black uppercase">Amônia</label>
+                  <input name="amonia" type="number" step="0.01" defaultValue={editingMedicao.amonia || ''} />
+                </div>
+                <div className="form-group">
+                  <label className="text-[10px] font-black uppercase">Nitrito</label>
+                  <input name="nitrito" type="number" step="0.01" defaultValue={editingMedicao.nitrito || ''} />
+                </div>
+                <div className="form-group">
+                  <label className="text-[10px] font-black uppercase">Nitrato</label>
+                  <input name="nitrato" type="number" step="0.1" defaultValue={editingMedicao.nitrato || ''} />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Observações</label>
+                <textarea 
+                  name="observacoes" 
+                  defaultValue={editingMedicao.observacoes || ''} 
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 min-h-[100px] outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                <button 
+                  type="button" 
+                  onClick={() => setEditingMedicao(null)}
+                  className="flex-1 py-4 font-bold text-slate-400 hover:bg-slate-50 rounded-2xl transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  className="flex-[2] btn btn-primary py-4 rounded-2xl shadow-lg shadow-blue-100 font-black"
+                  disabled={editLoading}
+                >
+                  {editLoading ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

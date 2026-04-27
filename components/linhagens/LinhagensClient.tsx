@@ -12,7 +12,7 @@ interface Linhagem {
   ativa: boolean;
   especie?: {
     nome: string;
-    sigla: string;
+    codigo: string;
   };
 }
 
@@ -51,7 +51,7 @@ export default function LinhagensClient({ linhagens }: { linhagens: Linhagem[] }
           
           <div className="flex-1">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
-              Código: {l.especie?.sigla}·{l.numero?.toString().padStart(3, '0')}
+              Código: {l.especie?.codigo}·{l.numero?.toString().padStart(3, '0')}
             </p>
             <h3 className="font-black text-slate-900 text-xl tracking-tight">{l.nome}</h3>
             <p className="text-sm font-bold text-indigo-600">{l.especie?.nome}</p>

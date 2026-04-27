@@ -1,10 +1,13 @@
+import { createClient } from '@/lib/supabase/server';
 import LinhagensClient from '@/components/linhagens/LinhagensClient';
+import Link from 'next/link';
+import { Plus, Dna } from 'lucide-react';
 
 export default async function LinhagensPage() {
   const supabase = await createClient();
   const { data: linhagens } = await supabase
     .from('linhagens')
-    .select('*, especie:especies(nome, sigla)')
+    .select('*, especie:especies(nome, codigo)')
     .order('nome');
 
   return (

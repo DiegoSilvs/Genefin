@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { createIndividuo } from '@/lib/actions/individuos';
 import { Especie, Linhagem, Estrutura, Individuo } from '@/lib/types';
-import { Save, X, Plus, Trash2, Fish } from 'lucide-react';
+import { Save, X, Plus, Trash2, Fish, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 
 interface IndividuoFormProps {
   especies: Especie[];
@@ -14,11 +15,25 @@ interface IndividuoFormProps {
 }
 
 export default function IndividuoForm({ especies, linhagens, estruturas, possiveisPais }: IndividuoFormProps) {
+  const router = useRouter();
+  const supabase = createClient();
+
+  // Estados dos Campos
   const [especieId, setEspecieId] = useState('');
   const [linhagemId, setLinhagemId] = useState('');
+  const [sexo, setSexo] = useState('M');
   const [origem, setOrigem] = useState('fundador');
-  const [loading, setLoading] = useState(false);
+  const [paiId, setPaiId] = useState('');
+  const [maeId, setMaeId] = useState('');
+  const [estruturaId, setEstruturaId] = useState('');
+  const [nomePopular, setNomePopular] = useState('');
+  const [dataNascimento, setDataNascimento] = useState('');
   const [fenotipos, setFenotipos] = useState([{ chave: '', valor: '' }]);
+
+  // Estados de UI
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [sucesso, setSucesso] = useState(false);
 
   const linhagensFiltradas = useMemo(() => {
     return linhagens.filter(l => l.especie_id === especieId);
@@ -40,14 +55,100 @@ export default function IndividuoForm({ especies, linhagens, estruturas, possive
     setFenotipos(newF);
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setErro(null);
+    
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado.');
+
+      // 1. Gerar código automático via RPC
+      const { data: codigo, error: errorCodigo } = await supabase.rpc('gerar_codigo_individuo', {
+        p_especie_id: especieId,
+        p_linhagem_id: linhagemId,
+        p_sexo: sexo
+      });
+      if (errorCodigo) throw errorCodigo;
+
+      // 2. Calcular geração via RPC
+      const { data: geracao, error: errorGeracao } = await supabase.rpc('calcular_geracao', {
+        p_pai_id: paiId || null,
+        p_mae_id: maeId || null
+      });
+      if (errorGeracao) throw errorGeracao;
+
+      // 3. Montar objeto de fenotipos
+      const fenotipoObj: Record<string, string> = {};
+      fenotipos.forEach(f => {
+        if (f.chave && f.valor) fenotipoObj[f.chave] = f.valor;
+      });
+
+      // 4. Inserir no banco
+      const { data: novoIndividuo, error: insertError } = await supabase
+        .from('individuos')
+        .insert({
+          usuario_id: user.id,
+          especie_id: especieId,
+          linhagem_id: linhagemId,
+          sexo: sexo,
+          origem: origem,
+          codigo: codigo,
+          geracao: geracao ?? 1,
+          pai_id: paiId || null,
+          mae_id: maeId || null,
+          estrutura_id: estruturaId || null,
+          nome_popular: nomePopular || null,
+          fenotipo: fenotipoObj,
+          data_nascimento: dataNascimento || null,
+          status: 'ativo'
+        })
+        .select('id')
+        .single();
+
+      if (insertError) throw insertError;
+
+      setSucesso(true);
+      router.push(`/individuos/${novoIndividuo.id}`);
+      router.refresh();
+
+    } catch (err: any) {
+      console.error(err);
+      setErro(err.message || 'Erro ao salvar reprodutor');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <form action={createIndividuo} onSubmit={() => setLoading(true)} className="space-y-8">
+    <form onSubmit={handleSubmit} className="space-y-8">
+      {/* Mensagens de Feedback */}
+      {erro && (
+        <div className="p-4 bg-red-50 border-2 border-red-100 rounded-2xl flex items-start gap-3 text-red-700 animate-in fade-in slide-in-from-top-4">
+          <AlertCircle className="shrink-0" size={20} />
+          <div>
+            <p className="font-black text-sm uppercase tracking-tight">Erro ao salvar</p>
+            <p className="text-sm font-medium opacity-90">{erro}</p>
+          </div>
+        </div>
+      )}
+
+      {sucesso && (
+        <div className="p-4 bg-green-50 border-2 border-green-100 rounded-2xl flex items-start gap-3 text-green-700">
+          <CheckCircle2 className="shrink-0" size={20} />
+          <div>
+            <p className="font-black text-sm uppercase tracking-tight">Sucesso!</p>
+            <p className="text-sm font-medium opacity-90">Indivíduo cadastrado. Redirecionando...</p>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="form-group">
           <label htmlFor="especie_id">Espécie</label>
           <select 
             id="especie_id" 
-            name="especie_id" 
             required
             value={especieId}
             onChange={(e) => { setEspecieId(e.target.value); setLinhagemId(''); }}
@@ -61,7 +162,6 @@ export default function IndividuoForm({ especies, linhagens, estruturas, possive
           <label htmlFor="linhagem_id">Linhagem</label>
           <select 
             id="linhagem_id" 
-            name="linhagem_id" 
             required
             disabled={!especieId}
             value={linhagemId}
@@ -78,7 +178,7 @@ export default function IndividuoForm({ especies, linhagens, estruturas, possive
 
         <div className="form-group">
           <label htmlFor="sexo">Sexo</label>
-          <select id="sexo" name="sexo" required>
+          <select id="sexo" value={sexo} onChange={(e) => setSexo(e.target.value)} required>
             <option value="M">Macho</option>
             <option value="F">Fêmea</option>
             <option value="I">Indeterminado</option>
@@ -91,7 +191,6 @@ export default function IndividuoForm({ especies, linhagens, estruturas, possive
           <label htmlFor="origem">Origem</label>
           <select 
             id="origem" 
-            name="origem" 
             value={origem}
             onChange={(e) => setOrigem(e.target.value)}
             required
@@ -101,26 +200,21 @@ export default function IndividuoForm({ especies, linhagens, estruturas, possive
           </select>
         </div>
 
-        {origem === 'fundador' ? (
-          <div className="form-group">
-            <label htmlFor="data_nascimento">Data de Nascimento (Aprox.)</label>
-            <input id="data_nascimento" name="data_nascimento" type="date" />
-          </div>
-        ) : (
-          <div className="form-group">
-            <label htmlFor="ninhada_origem_id">Ninhada de Origem</label>
-            <select id="ninhada_origem_id" name="ninhada_origem_id">
-              <option value="">Selecione a ninhada...</option>
-              {/* Ninhadas virão aqui no futuro */}
-            </select>
-          </div>
-        )}
+        <div className="form-group">
+          <label htmlFor="data_nascimento">Data de Nascimento (Aprox.)</label>
+          <input 
+            id="data_nascimento" 
+            type="date" 
+            value={dataNascimento}
+            onChange={(e) => setDataNascimento(e.target.value)}
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="form-group">
           <label htmlFor="pai_id">Pai (Genitor)</label>
-          <select id="pai_id" name="pai_id" disabled={!linhagemId}>
+          <select id="pai_id" value={paiId} onChange={(e) => setPaiId(e.target.value)} disabled={!linhagemId}>
             <option value="">Desconhecido / Externo</option>
             {paisFiltrados.map(p => <option key={p.id} value={p.id}>{p.codigo} {p.nome_popular ? `(${p.nome_popular})` : ''}</option>)}
           </select>
@@ -128,7 +222,7 @@ export default function IndividuoForm({ especies, linhagens, estruturas, possive
 
         <div className="form-group">
           <label htmlFor="mae_id">Mãe (Matriz)</label>
-          <select id="mae_id" name="mae_id" disabled={!linhagemId}>
+          <select id="mae_id" value={maeId} onChange={(e) => setMaeId(e.target.value)} disabled={!linhagemId}>
             <option value="">Desconhecida / Externa</option>
             {maesFiltradas.map(m => <option key={m.id} value={m.id}>{m.codigo} {m.nome_popular ? `(${m.nome_popular})` : ''}</option>)}
           </select>
@@ -138,12 +232,18 @@ export default function IndividuoForm({ especies, linhagens, estruturas, possive
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="form-group">
           <label htmlFor="nome_popular">Nome Popular / Apelido</label>
-          <input id="nome_popular" name="nome_popular" type="text" placeholder="Ex: Blue 01, O Grande" />
+          <input 
+            id="nome_popular" 
+            type="text" 
+            value={nomePopular}
+            onChange={(e) => setNomePopular(e.target.value)}
+            placeholder="Ex: Blue 01, O Grande" 
+          />
         </div>
 
         <div className="form-group">
           <label htmlFor="estrutura_id">Aquário Atual</label>
-          <select id="estrutura_id" name="estrutura_id">
+          <select id="estrutura_id" value={estruturaId} onChange={(e) => setEstruturaId(e.target.value)}>
             <option value="">Sem aquário definido</option>
             {estruturas.map(e => <option key={e.id} value={e.id}>{e.nome} ({e.tipo})</option>)}
           </select>
@@ -169,14 +269,12 @@ export default function IndividuoForm({ especies, linhagens, estruturas, possive
           {fenotipos.map((f, i) => (
             <div key={i} className="flex gap-3">
               <input 
-                name="fenotipo_chave"
                 placeholder="Característica (ex: Cor)" 
                 className="flex-1"
                 value={f.chave}
                 onChange={(e) => updateFenotipo(i, 'chave', e.target.value)}
               />
               <input 
-                name="fenotipo_valor"
                 placeholder="Valor (ex: Azul Cobalto)" 
                 className="flex-1"
                 value={f.valor}
@@ -199,8 +297,11 @@ export default function IndividuoForm({ especies, linhagens, estruturas, possive
           <X size={18} /> Cancelar
         </Link>
         <button type="submit" className="btn btn-primary px-8" disabled={loading}>
-          <Save size={18} />
-          {loading ? 'Processando...' : 'Salvar Indivíduo'}
+          {loading ? (
+            <><Loader2 size={18} className="animate-spin" /> Processando...</>
+          ) : (
+            <><Save size={18} /> Salvar Indivíduo</>
+          )}
         </button>
       </div>
     </form>

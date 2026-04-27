@@ -3,12 +3,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 /**
  * Cria cliente Supabase para middleware.
- * Permite ler sessão do usuário para proteger rotas.
  */
-export async function updateSession(request: NextRequest) {
-  const supabaseResponse = NextResponse.next({ request });
-
-  const supabase = createServerClient(
+export function createClient(request: NextRequest, response: NextResponse) {
+  return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -19,12 +16,21 @@ export async function updateSession(request: NextRequest) {
         setAll(cookiesToSet) {
           for (const { name, value } of cookiesToSet) {
             request.cookies.set(name, value);
-            supabaseResponse.cookies.set(name, value);
+            response.cookies.set(name, value);
           }
         },
       },
     },
   );
+}
+
+/**
+ * Cria cliente Supabase para middleware e atualiza sessão.
+ */
+export async function updateSession(request: NextRequest) {
+  let response = NextResponse.next({ request });
+
+  const supabase = createClient(request, response);
 
   // Lê a sessão atual
   const {
@@ -34,6 +40,7 @@ export async function updateSession(request: NextRequest) {
   // Rotas protegidas
   const isProtected = !request.nextUrl.pathname.startsWith('/login') &&
     !request.nextUrl.pathname.startsWith('/register') &&
+    !request.nextUrl.pathname.startsWith('/cadastro') &&
     !request.nextUrl.pathname.startsWith('/auth/callback') &&
     request.nextUrl.pathname !== '/';
 
@@ -46,11 +53,12 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Se está autenticado e vai para login/register, redireciona para home
-  if (user && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/register')) {
+  if (user && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/register' || request.nextUrl.pathname === '/cadastro')) {
     const url = request.nextUrl.clone();
     url.pathname = '/';
     return NextResponse.redirect(url);
   }
 
-  return supabaseResponse;
+  return response;
 }
+

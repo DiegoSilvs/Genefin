@@ -24,7 +24,7 @@ CREATE TABLE especies (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nome TEXT NOT NULL,               -- ex: "Acará disco"
   nome_cientifico TEXT,             -- ex: "Symphysodon sp."
-  sigla TEXT NOT NULL UNIQUE,       -- ex: "DISC" (usado no código automático)
+  codigo TEXT NOT NULL UNIQUE,      -- ex: "DISC", "GUPP", "BETT" (usado no código automático)
   ph_min DECIMAL(4,2),
   ph_max DECIMAL(4,2),
   temp_min DECIMAL(4,1),
@@ -40,13 +40,29 @@ CREATE TABLE linhagens (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   usuario_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   especie_id UUID REFERENCES especies(id) ON DELETE RESTRICT,
-  nome TEXT NOT NULL,               -- ex: "Blue Diamond"
-  sigla TEXT NOT NULL,              -- ex: "BDI" (usado no código automático)
+  nome TEXT NOT NULL,
+  numero INTEGER,
   descricao TEXT,
   ativa BOOLEAN DEFAULT TRUE,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(usuario_id, especie_id, sigla)
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Trigger para definir número sequencial da linhagem por usuário/espécie
+CREATE OR REPLACE FUNCTION set_numero_linhagem()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.numero := (
+    SELECT COALESCE(MAX(numero), 0) + 1
+    FROM linhagens
+    WHERE usuario_id = NEW.usuario_id AND especie_id = NEW.especie_id
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_set_numero_linhagem
+BEFORE INSERT ON linhagens
+FOR EACH ROW EXECUTE FUNCTION set_numero_linhagem();
 
 -- 3. ESTRUTURAS (aquários, tanques, baias)
 CREATE TABLE estruturas (
@@ -85,7 +101,7 @@ CREATE TABLE individuos (
   pai_id UUID REFERENCES individuos(id) ON DELETE SET NULL,
   mae_id UUID REFERENCES individuos(id) ON DELETE SET NULL,
 
-  codigo TEXT NOT NULL UNIQUE,      -- ex: "DISC·BDI·M·0023" (gerado automaticamente)
+  codigo TEXT NOT NULL UNIQUE,      -- ex: "DISC·001·2026·M·001" (gerado automaticamente)
   nome_popular TEXT,                -- ex: "Zeus" (opcional, apenas referência interna)
   sexo TEXT NOT NULL CHECK (sexo IN ('M', 'F', 'I')),
   geracao INTEGER DEFAULT 1,        -- 1 = fundador, 2 = F1, 3 = F2...
@@ -109,7 +125,7 @@ CREATE TABLE ninhadas (
   mae_id UUID REFERENCES individuos(id) ON DELETE SET NULL,
   estrutura_id UUID REFERENCES estruturas(id) ON DELETE SET NULL,  -- onde estão os alevinos
 
-  codigo TEXT NOT NULL UNIQUE,      -- ex: "NIN·DISC·BDI·2026·018"
+  codigo TEXT NOT NULL UNIQUE,      -- ex: "NIN·DISC·001·2026·018"
   data_cruzamento DATE,
   data_nascimento DATE,
   total_nascidos INTEGER DEFAULT 0,
@@ -149,9 +165,9 @@ CREATE TABLE medicoes_agua (
   estrutura_id UUID REFERENCES estruturas(id) ON DELETE CASCADE,
   ph DECIMAL(4,2),
   temperatura DECIMAL(4,1),
-  amonia DECIMAL(6,4),             -- NH3 em ppm
-  nitrito DECIMAL(6,4),
-  nitrato DECIMAL(6,2),
+  amonia DECIMAL(10,4),             -- NH3 em ppm
+  nitrito DECIMAL(10,4),
+  nitrato DECIMAL(10,2),
   condutividade INTEGER,            -- µS/cm
   dureza_gh INTEGER,
   data_medicao TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -244,22 +260,31 @@ CREATE OR REPLACE FUNCTION gerar_codigo_individuo(
   p_sexo TEXT
 ) RETURNS TEXT AS $$
 DECLARE
-  v_sigla_especie TEXT;
-  v_sigla_linhagem TEXT;
-  v_numero INTEGER;
+  v_codigo_especie TEXT;
+  v_numero_linhagem INTEGER;
+  v_ano TEXT;
+  v_sequencial INTEGER;
   v_codigo TEXT;
 BEGIN
-  SELECT sigla INTO v_sigla_especie FROM especies WHERE id = p_especie_id;
-  SELECT sigla INTO v_sigla_linhagem FROM linhagens WHERE id = p_linhagem_id;
+  -- 1. Buscar código da espécie e número da linhagem
+  SELECT codigo INTO v_codigo_especie FROM especies WHERE id = p_especie_id;
+  SELECT numero INTO v_numero_linhagem FROM linhagens WHERE id = p_linhagem_id;
+  v_ano := EXTRACT(YEAR FROM NOW())::TEXT;
 
-  -- Incrementa sequência de forma atômica (evita condição de corrida)
+  -- 2. Incrementar sequencial na tabela de controle
   INSERT INTO sequencias_codigo (especie_id, linhagem_id, sexo, ultimo_numero)
   VALUES (p_especie_id, p_linhagem_id, p_sexo, 1)
-  ON CONFLICT (especie_id, linhagem_id, sexo)
+  ON CONFLICT (especie_id, linhagem_id, sexo) 
   DO UPDATE SET ultimo_numero = sequencias_codigo.ultimo_numero + 1
-  RETURNING ultimo_numero INTO v_numero;
+  RETURNING ultimo_numero INTO v_sequencial;
 
-  v_codigo := v_sigla_especie || '·' || v_sigla_linhagem || '·' || p_sexo || '·' || LPAD(v_numero::TEXT, 4, '0');
+  -- 3. Formar o código: ESPE·LIN·ANO·SEXO·SEQ (ex: DISC·001·2026·M·001)
+  v_codigo := v_codigo_especie || '·' || 
+              LPAD(v_numero_linhagem::TEXT, 3, '0') || '·' || 
+              v_ano || '·' || 
+              p_sexo || '·' || 
+              LPAD(v_sequencial::TEXT, 3, '0');
+
   RETURN v_codigo;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -270,24 +295,50 @@ CREATE OR REPLACE FUNCTION gerar_codigo_ninhada(
   p_linhagem_id UUID
 ) RETURNS TEXT AS $$
 DECLARE
-  v_sigla_especie TEXT;
-  v_sigla_linhagem TEXT;
+  v_codigo_especie TEXT;
+  v_numero_linhagem INTEGER;
   v_ano TEXT;
   v_numero INTEGER;
 BEGIN
-  SELECT sigla INTO v_sigla_especie FROM especies WHERE id = p_especie_id;
-  SELECT sigla INTO v_sigla_linhagem FROM linhagens WHERE id = p_linhagem_id;
+  -- 1. Buscar código da espécie e número da linhagem
+  SELECT codigo INTO v_codigo_especie FROM especies WHERE id = p_especie_id;
+  SELECT numero INTO v_numero_linhagem FROM linhagens WHERE id = p_linhagem_id;
   v_ano := EXTRACT(YEAR FROM NOW())::TEXT;
 
-  SELECT COUNT(*) + 1 INTO v_numero
+  -- 2. Buscar o maior número sequencial já usado no ano atual para evitar duplicidade
+  SELECT COALESCE(
+    MAX(CAST(RIGHT(codigo, 3) AS INTEGER)), 
+    0
+  ) + 1 INTO v_numero
   FROM ninhadas
   WHERE especie_id = p_especie_id
     AND linhagem_id = p_linhagem_id
     AND EXTRACT(YEAR FROM created_at) = EXTRACT(YEAR FROM NOW());
 
-  RETURN 'NIN·' || v_sigla_especie || '·' || v_sigla_linhagem || '·' || v_ano || '·' || LPAD(v_numero::TEXT, 3, '0');
+  -- 3. Formar o código: NIN·ESPE·LIN·ANO·SEQ
+  RETURN 'NIN·' || v_codigo_especie || '·' || LPAD(v_numero_linhagem::TEXT, 3, '0') || '·' || v_ano || '·' || LPAD(v_numero::TEXT, 3, '0');
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Trigger para gerar número sequencial da linhagem automaticamente
+CREATE OR REPLACE FUNCTION trigger_numero_linhagem()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.numero IS NULL THEN
+    SELECT COALESCE(MAX(numero), 0) + 1
+    INTO NEW.numero
+    FROM linhagens
+    WHERE usuario_id = NEW.usuario_id
+      AND especie_id = NEW.especie_id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS set_numero_linhagem ON linhagens;
+CREATE TRIGGER set_numero_linhagem
+  BEFORE INSERT ON linhagens
+  FOR EACH ROW EXECUTE FUNCTION trigger_numero_linhagem();
 
 -- Função: calcula geração de um indivíduo com base nos pais
 CREATE OR REPLACE FUNCTION calcular_geracao(
@@ -316,3 +367,20 @@ INSERT INTO especies (nome, nome_cientifico, sigla, ph_min, ph_max, temp_min, te
   ('Guppy', 'Poecilia reticulata', 'GUPY', 7.0, 8.5, 22.0, 28.0),
   ('Acará Bandeira', 'Pterophyllum scalare', 'BAND', 6.0, 7.5, 24.0, 30.0)
 ON CONFLICT (sigla) DO NOTHING;
+
+-- 12. PERFIS DE USUÁRIO
+CREATE TABLE IF NOT EXISTS profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  nome TEXT,
+  nome_fazenda TEXT,
+  cidade TEXT,
+  estado TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "usuario_ve_proprio_perfil" ON profiles
+  FOR ALL USING (auth.uid() = id);
+

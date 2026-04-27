@@ -9,7 +9,7 @@ export async function createLinhagem(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
-    throw new Error('Usuário não autenticado');
+    return { error: 'Usuário não autenticado' };
   }
 
   const especie_id = formData.get('especie_id') as string;
@@ -26,11 +26,11 @@ export async function createLinhagem(formData: FormData) {
 
   if (error) {
     console.error('Erro ao criar linhagem:', error);
-    return { error: 'Falha ao salvar linhagem no banco de dados' };
+    return { error: 'Falha ao salvar linhagem: ' + error.message };
   }
 
   revalidatePath('/linhagens');
-  redirect('/linhagens');
+  return { success: true };
 }
 
 export async function deleteLinhagem(id: string) {
